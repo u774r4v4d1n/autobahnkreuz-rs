@@ -1,69 +1,73 @@
 mod handshake;
 mod messaging;
 mod pubsub;
-mod rpc;
+mod machine;
 
-use super::ID;
-use messages::{ErrorDetails, Message, Reason};
+use crate::messages::{ErrorDetails, Message, Reason, URI};
 use rand::distributions::{Distribution, Range};
 use rand::thread_rng;
-use router::messaging::send_message;
-use router::pubsub::SubscriptionPatternNode;
-use router::rpc::RegistrationPatternNode;
+use crate::router::pubsub::SubscriptionPatternNode;
+use crate::router::machine::send_message_json;
+use crate::router::machine::send_message_msgpack;
 use std::collections::HashMap;
 use std::marker::Sync;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
+use std::env;
 use ws::{listen as ws_listen, Result as WSResult, Sender};
+use simple_raft_node::{RequestManager, Node, Config, transports::TcpConnectionManager, storages::MemStorage};
+use regex::Regex;
+use crate::{ID, Error, ErrorType, ErrorKind, MatchingPolicy, WampResult};
+use serde::{Serialize, Deserialize};
+use std::net::ToSocketAddrs;
 
+#[derive(Debug, Clone, Default)]
 struct SubscriptionManager {
-    subscriptions: SubscriptionPatternNode<Arc<Mutex<ConnectionInfo>>>,
+    subscriptions: Arc<Mutex<SubscriptionPatternNode<u64>>>,
     subscription_ids_to_uris: HashMap<u64, (String, bool)>,
 }
 
-struct RegistrationManager {
-    registrations: RegistrationPatternNode<Arc<Mutex<ConnectionInfo>>>,
-    registration_ids_to_uris: HashMap<u64, (String, bool)>,
-    active_calls: HashMap<ID, (ID, Arc<Mutex<ConnectionInfo>>)>,
-}
-
-struct Realm {
-    subscription_manager: SubscriptionManager,
-    registration_manager: RegistrationManager,
-    connections: Vec<Arc<Mutex<ConnectionInfo>>>,
-}
-
 pub struct Router {
-    info: Arc<RouterInfo>,
+    node: Node<RouterInfo>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct RouterCore {
+    subscription_manager: SubscriptionManager,
+    connections: Arc<Mutex<HashMap<u64, Arc<Mutex<ConnectionInfo>>>>>,
+    senders: Arc<Mutex<HashMap<u64, Sender>>>,
+}
+
+#[derive(Debug, Clone, Default)]
 struct RouterInfo {
-    realms: Mutex<HashMap<String, Arc<Mutex<Realm>>>>,
+    request_manager: Option<RequestManager<RouterCore>>,
+    senders: Arc<Mutex<HashMap<u64, Sender>>>,
 }
 
 struct ConnectionHandler {
-    info: Arc<Mutex<ConnectionInfo>>,
-    router: Arc<RouterInfo>,
-    realm: Option<Arc<Mutex<Realm>>>,
+    info_id: u64,
+    router: RouterInfo,
+    sender: Sender,
     subscribed_topics: Vec<ID>,
-    registered_procedures: Vec<ID>,
 }
 
+#[derive(Debug)]
 pub struct ConnectionInfo {
     state: ConnectionState,
-    sender: Sender,
     protocol: String,
     id: u64,
 }
 
-#[derive(Clone, PartialEq)]
-enum ConnectionState {
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ConnectionState {
     Initializing,
     Connected,
     ShuttingDown,
     Disconnected,
 }
+
+unsafe impl Sync for Router {}
 
 static WAMP_JSON: &'static str = "wamp.2.json";
 static WAMP_MSGPACK: &'static str = "wamp.2.msgpack";
@@ -75,8 +79,6 @@ fn random_id() -> u64 {
     between.sample(&mut rng)
 }
 
-unsafe impl Sync for Router {}
-
 impl Default for Router {
     fn default() -> Self {
         Self::new()
@@ -86,123 +88,254 @@ impl Default for Router {
 impl Router {
     #[inline]
     pub fn new() -> Router {
+        let node_id_msg = "Please specify a NODE_ID >= 0 via an environment variable!";
+        let re = Regex::new(r"\d+").unwrap();
+        let node_id_str = env::var("NODE_ID").expect(node_id_msg);
+        let mut node_id = re.find(node_id_str.as_str())
+            .expect(node_id_msg)
+            .as_str()
+            .parse::<u64>()
+            .expect(node_id_msg);
+
+        node_id += 1;
+
+        let node_address = env::var("NODE_ADDRESS").ok()
+        .map(|address| {
+            loop {
+                log::info!("Trying to resolve binding IP address {}...", address);
+                match address.to_socket_addrs() {
+                    Ok(mut addr) => {
+                        return addr
+                            .next()
+                            .expect("The binding address does not resolve to a valid IP or port!");
+                    },
+                    Err(e) => {
+                        log::warn!("Could not resolve binding address {}: {}", address, e);
+                    },
+                }
+            }
+        }).expect("Please specify a NODE_ADDRESS (domain:port) via an environment variable!");
+
+        let gateway = env::var("NODE_GATEWAY").ok()
+            .map(|gateway| {
+                loop {
+                    log::info!("Trying to resolve gateway address {}...", gateway);
+                    match gateway.to_socket_addrs() {
+                        Ok(mut addr) => {
+                            return addr
+                                .next()
+                                .expect("The gateway address does not resolve to a valid IP or port!");
+                        },
+                        Err(e) => {
+                            log::warn!("Could not resolve gateway {}: {}", gateway, e);
+                        },
+                    }
+                }
+            }).expect("The gateway address environment variable NODE_GATEWAY is not specified!");
+
+        let config = Config {
+            id: node_id,
+            tag: format!("node_{}", node_id),
+            election_tick: 10,
+            heartbeat_tick: 3,
+            ..Default::default()
+        };
+        let machine = RouterInfo::default();
+        let storage = MemStorage::new();
+        let mgr = TcpConnectionManager::new(node_address).unwrap();
+        let node = Node::new(
+            config,
+            gateway,
+            machine,
+            storage,
+            mgr,
+        );
+        let stop = node.stop_handler();
+
+        ctrlc::set_handler(move || {
+            stop();
+
+            // wait until stop is finished
+            thread::sleep(Duration::from_micros(200));
+
+            std::process::exit(0);
+        }).expect("error setting Ctrl-C handler");
+
         Router {
-            info: Arc::new(RouterInfo {
-                realms: Mutex::new(HashMap::new()),
-            }),
+            node,
         }
     }
 
     pub fn listen(&self, url: &str) -> JoinHandle<()> {
-        let router_info = Arc::clone(&self.info);
+        let router_info = self.node.machine().clone();
         let url = url.to_string();
         thread::spawn(move || {
-            ws_listen(&url[..], |sender| ConnectionHandler {
-                info: Arc::new(Mutex::new(ConnectionInfo {
-                    state: ConnectionState::Initializing,
-                    sender: sender,
-                    protocol: String::new(),
-                    id: random_id(),
-                })),
-                subscribed_topics: Vec::new(),
-                registered_procedures: Vec::new(),
-                realm: None,
-                router: Arc::clone(&router_info),
+            ws_listen(&url[..], |sender| {
+                let id = random_id();
+                router_info.add_connection(id, sender.clone());
+                ConnectionHandler {
+                    info_id: id,
+                    subscribed_topics: Vec::new(),
+                    router: router_info.clone(),
+                    sender,
+                }
             }).unwrap();
         })
     }
 
-    pub fn add_realm(&mut self, realm: &str) {
-        let mut realms = self.info.realms.lock().unwrap();
-        if realms.contains_key(realm) {
-            return;
-        }
-        realms.insert(
-            realm.to_string(),
-            Arc::new(Mutex::new(Realm {
-                connections: Vec::new(),
-                subscription_manager: SubscriptionManager {
-                    subscriptions: SubscriptionPatternNode::new(),
-                    subscription_ids_to_uris: HashMap::new(),
-                },
-                registration_manager: RegistrationManager {
-                    registrations: RegistrationPatternNode::new(),
-                    registration_ids_to_uris: HashMap::new(),
-                    active_calls: HashMap::new(),
-                },
-            })),
-        );
-        debug!("Added realm {}", realm);
-    }
-
     pub fn shutdown(&self) {
-        for realm in self.info.realms.lock().unwrap().values() {
-            for connection in &realm.lock().unwrap().connections {
-                send_message(
-                    connection,
-                    &Message::Goodbye(ErrorDetails::new(), Reason::SystemShutdown),
-                ).ok();
-                let mut connection = connection.lock().unwrap();
-                connection.state = ConnectionState::ShuttingDown;
-            }
+        let info = self.node.machine();
+        let arc = info.connections();
+        let connections = arc.lock().unwrap();
+        for id in connections.keys() {
+            info.send_message(
+                *id,
+                Message::Goodbye(ErrorDetails::new(), Reason::SystemShutdown),
+            );
+            info.set_state(*id, ConnectionState::ShuttingDown);
         }
-        info!("Goodbye messages sent.  Waiting 5 seconds for response");
+        log::info!("Goodbye messages sent.  Waiting 5 seconds for response");
         thread::sleep(Duration::from_secs(5));
-        for realm in self.info.realms.lock().unwrap().values() {
-            for connection in &realm.lock().unwrap().connections {
-                let connection = connection.lock().unwrap();
-                connection.sender.shutdown().ok();
-            }
+        for id in connections.keys() {
+            info.shutdown_sender(id);
         }
     }
 }
 
-impl ConnectionHandler {
-    fn remove(&mut self) {
-        if let Some(ref realm) = self.realm {
-            let mut realm = realm.lock().unwrap();
-            {
-                trace!(
-                    "Removing subscriptions for client {}",
-                    self.info.lock().unwrap().id
-                );
-                let manager = &mut realm.subscription_manager;
-                for subscription_id in &self.subscribed_topics {
-                    trace!("Looking for subscription {}", subscription_id);
-                    if let Some(&(ref topic_uri, is_prefix)) =
-                        manager.subscription_ids_to_uris.get(subscription_id)
-                    {
-                        trace!("Removing subscription to {:?}", topic_uri);
-                        manager
-                            .subscriptions
-                            .unsubscribe_with(topic_uri, &self.info, is_prefix)
-                            .ok();
-                        trace!("Subscription tree: {:?}", manager.subscriptions);
-                    }
-                }
+impl RouterCore {
+    pub fn send_message(
+        &self,
+        connection_id: u64,
+        protocol: String,
+        message: Message,
+    ) -> WampResult<()> {
+        if let Some(sender) = self.senders.lock().unwrap().get(&connection_id) {
+            log::debug!("Sending message {:?} via {}", message, protocol);
+            let send_result = if protocol == WAMP_JSON {
+                send_message_json(sender, &message)
+            } else {
+                send_message_msgpack(sender, &message)
+            };
+            match send_result {
+                Ok(()) => Ok(()),
+                Err(e) => Err(Error::new(ErrorKind::WSError(e))),
             }
-            {
-                let manager = &mut realm.registration_manager;
-                for registration_id in &self.registered_procedures {
-                    if let Some(&(ref topic_uri, is_prefix)) =
-                        manager.registration_ids_to_uris.get(registration_id)
-                    {
-                        manager
-                            .registrations
-                            .unregister_with(topic_uri, &self.info, is_prefix)
-                            .ok();
-                    }
-                }
-            }
-            let my_id = self.info.lock().unwrap().id;
-            realm
-                .connections
-                .retain(|connection| connection.lock().unwrap().id != my_id);
+        } else {
+            Ok(())
         }
     }
 
-    fn terminate_connection(&mut self) -> WSResult<()> {
+    pub fn shutdown_sender(&self, id: &u64) {
+        if let Some(sender) = self.senders.lock().unwrap().get_mut(id) {
+            sender.shutdown().ok();
+        }
+    }
+
+    pub fn set_state(&self, connection_id: u64, state: ConnectionState) {
+        let connections = self.connections.lock().unwrap();
+        let connection = connections.get(&connection_id).unwrap();
+        connection.lock().unwrap().state = state;
+    }
+
+    pub fn set_protocol(&self, connection_id: u64, protocol: String) {
+        let connections = self.connections.lock().unwrap();
+        let connection = connections.get(&connection_id).unwrap();
+        connection.lock().unwrap().protocol = protocol;
+    }
+
+    pub fn add_connection(&mut self, connection_id: u64) {
+        self.connections.lock().unwrap().insert(connection_id, Arc::new(Mutex::new(ConnectionInfo {
+            state: ConnectionState::Initializing,
+            protocol: String::new(),
+            id: connection_id,
+        })));
+    }
+
+    pub fn remove_connection(&mut self, connection_id: u64) {
+        self.connections.lock().unwrap().remove(&connection_id);
+    }
+
+    pub fn remove_subscription(&mut self, connection_id: &u64, subscription_id: &u64, request_id: &u64) -> WampResult<()> {
+        if let Some(&(ref topic_uri, is_prefix)) =
+            self.subscription_manager.subscription_ids_to_uris.get(subscription_id)
+        {
+            log::trace!("Removing subscription to {:?}", topic_uri);
+            self.subscription_manager
+                .subscriptions
+                .lock().unwrap()
+                .unsubscribe_with(topic_uri, connection_id, is_prefix)
+                .map_err(|e| Error::new(ErrorKind::ErrorReason(
+                    ErrorType::Unsubscribe,
+                    *request_id,
+                    e.reason(),
+                )))?;
+            log::trace!("Subscription tree: {:?}", self.subscription_manager.subscriptions);
+        } else {
+            return Err(Error::new(ErrorKind::ErrorReason(
+                ErrorType::Unsubscribe,
+                *request_id,
+                Reason::NoSuchSubscription,
+            )));
+        }
+
+        Ok(())
+    }
+
+    pub fn add_subscription(
+        &mut self,
+        connection_id: u64,
+        request_id: u64,
+        topic: URI,
+        matching_policy: MatchingPolicy,
+    ) -> WampResult<u64> {
+        log::debug!(
+            "machine is adding subscription ({}, {}, {:?}, {:?})",
+            connection_id,
+            request_id,
+            topic,
+            matching_policy,
+        );
+        let topic_id = match self.subscription_manager.subscriptions.lock().unwrap().subscribe_with(
+            &topic,
+            connection_id,
+            matching_policy,
+        ) {
+            Ok(topic_id) => topic_id,
+            Err(e) => {
+                return Err(Error::new(ErrorKind::ErrorReason(
+                    ErrorType::Subscribe,
+                    request_id,
+                    e.reason(),
+                )))
+            }
+        };
+        self.subscription_manager.subscription_ids_to_uris.insert(
+            topic_id,
+            (topic.uri, matching_policy == MatchingPolicy::Prefix),
+        );
+        Ok(topic_id)
+    }
+}
+
+impl ConnectionHandler {
+    fn remove(&self) {
+        log::trace!(
+            "Removing subscriptions for client {}",
+            self.info_id,
+        );
+        for subscription_id in &self.subscribed_topics {
+            log::trace!("Looking for subscription {}", subscription_id);
+            self.router.remove_subscription(self.info_id, 0, *subscription_id);
+            self.router.remove_connection(self.info_id);
+        }
+    }
+
+    fn terminate_connection(&self) -> WSResult<()> {
         self.remove();
         Ok(())
+    }
+
+    fn info(&self) -> Arc<Mutex<ConnectionInfo>> {
+        self.router.connection(self.info_id).clone()
     }
 }

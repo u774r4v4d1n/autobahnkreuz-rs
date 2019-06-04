@@ -1,38 +1,39 @@
 use super::{is_not, ClientRoles, InvocationPolicy, MatchingPolicy, RouterRoles, URI};
+use serde::{Serialize, Deserialize};
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Default)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug, Default)]
 pub struct HelloDetails {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     agent: Option<String>,
     roles: ClientRoles,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Default)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug, Default)]
 pub struct WelcomeDetails {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     agent: Option<String>,
     roles: RouterRoles,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Default)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug, Default)]
 pub struct ErrorDetails {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     message: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Default)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug, Default)]
 pub struct SubscribeOptions {
     #[serde(default, rename = "match", skip_serializing_if = "MatchingPolicy::is_strict")]
     pub pattern_match: MatchingPolicy,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Default)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug, Default)]
 pub struct PublishOptions {
     #[serde(default, skip_serializing_if = "is_not")]
     acknowledge: bool,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Default)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug, Default)]
 pub struct RegisterOptions {
     #[serde(default, rename = "match", skip_serializing_if = "MatchingPolicy::is_strict")]
     pub pattern_match: MatchingPolicy,
@@ -41,13 +42,13 @@ pub struct RegisterOptions {
     pub invocation_policy: InvocationPolicy,
 }
 
-#[derive(PartialEq, Debug, Default, Serialize, Deserialize)]
+#[derive(PartialEq, Clone, Debug, Default, Serialize, Deserialize)]
 pub struct CallOptions {}
 
-#[derive(PartialEq, Debug, Default, Serialize, Deserialize)]
+#[derive(PartialEq, Clone, Debug, Default, Serialize, Deserialize)]
 pub struct YieldOptions {}
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Default)]
+#[derive(Serialize, Clone, Deserialize, PartialEq, Debug, Default)]
 pub struct EventDetails {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     publisher: Option<String>,
@@ -59,13 +60,13 @@ pub struct EventDetails {
     pub topic: Option<URI>,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Default)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug, Default)]
 pub struct InvocationDetails {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub procedure: Option<URI>,
 }
 
-#[derive(PartialEq, Debug, Default, Serialize, Deserialize)]
+#[derive(PartialEq, Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ResultDetails {}
 
 impl HelloDetails {

@@ -1,9 +1,9 @@
 use super::{Dict, List};
 use serde;
 use std::fmt;
-use URI;
+use crate::URI;
 
-#[derive(Hash, Eq, PartialEq, Debug)]
+#[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub enum Reason {
     InvalidURI,
     NoSuchProcedure,
@@ -34,7 +34,7 @@ pub struct CallError {
     kwargs: Option<Dict>,
 }
 
-#[derive(Hash, Eq, PartialEq, Debug)]
+#[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub enum ErrorType {
     Subscribe,
     Unsubscribe,

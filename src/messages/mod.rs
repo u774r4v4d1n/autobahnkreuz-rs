@@ -1,20 +1,20 @@
 use std::fmt;
 
-pub use messages::types::*;
+pub use crate::messages::types::*;
 use serde;
-use ID;
+use crate::ID;
 mod types;
 
 macro_rules! try_or {
     ($e:expr, $msg:expr) => {
-        match try!($e) {
+        match ($e)? {
             Some(val) => val,
             None => return Err(serde::de::Error::custom($msg)),
         }
     };
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Message {
     Hello(URI, HelloDetails),
     Welcome(ID, WelcomeDetails),
@@ -217,8 +217,8 @@ impl MessageVisitor {
             visitor.next_element(),
             "Error message ended before reason uri"
         );
-        let args = try!(visitor.next_element());
-        let kwargs = try!(visitor.next_element());
+        let args = visitor.next_element()?;
+        let kwargs = visitor.next_element()?;
         Ok(Message::Error(
             message_type,
             id,
@@ -305,8 +305,8 @@ impl MessageVisitor {
             visitor.next_element(),
             "Publish message ended before topic uri"
         );
-        let args = try!(visitor.next_element());
-        let kwargs = try!(visitor.next_element());
+        let args = visitor.next_element()?;
+        let kwargs = visitor.next_element()?;
         Ok(Message::Publish(id, details, topic, args, kwargs))
     }
 
@@ -341,8 +341,8 @@ impl MessageVisitor {
             visitor.next_element(),
             "Event message ended before details dict"
         );
-        let args = try!(visitor.next_element());
-        let kwargs = try!(visitor.next_element());
+        let args = visitor.next_element()?;
+        let kwargs = visitor.next_element()?;
         Ok(Message::Event(
             subscription_id,
             publication_id,
@@ -428,8 +428,8 @@ impl MessageVisitor {
             visitor.next_element(),
             "Call message ended before procedure uri"
         );
-        let args = try!(visitor.next_element());
-        let kwargs = try!(visitor.next_element());
+        let args = visitor.next_element()?;
+        let kwargs = visitor.next_element()?;
         Ok(Message::Call(id, options, topic, args, kwargs))
     }
 
@@ -449,8 +449,8 @@ impl MessageVisitor {
             visitor.next_element(),
             "Invocation message ended before details dict"
         );
-        let args = try!(visitor.next_element());
-        let kwargs = try!(visitor.next_element());
+        let args = visitor.next_element()?;
+        let kwargs = visitor.next_element()?;
         Ok(Message::Invocation(
             id,
             registration_id,
@@ -472,8 +472,8 @@ impl MessageVisitor {
             visitor.next_element(),
             "Yield message ended before options dict"
         );
-        let args = try!(visitor.next_element());
-        let kwargs = try!(visitor.next_element());
+        let args = visitor.next_element()?;
+        let kwargs = visitor.next_element()?;
         Ok(Message::Yield(id, options, args, kwargs))
     }
 
@@ -489,8 +489,8 @@ impl MessageVisitor {
             visitor.next_element(),
             "Result message ended before details dict"
         );
-        let args = try!(visitor.next_element());
-        let kwargs = try!(visitor.next_element());
+        let args = visitor.next_element()?;
+        let kwargs = visitor.next_element()?;
         Ok(Message::Result(id, details, args, kwargs))
     }
 }

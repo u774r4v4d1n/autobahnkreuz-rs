@@ -1,5 +1,5 @@
 use super::{ErrorType, Message, ID};
-use messages::{self, Reason};
+use crate::messages::{self, Reason};
 use rmp_serde::decode::Error as MsgPackError;
 use serde_json::Error as JSONError;
 use std::fmt;

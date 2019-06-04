@@ -3,7 +3,7 @@ use itertools::Itertools;
 use serde;
 use std::collections::HashMap;
 use std::fmt;
-use CallResult;
+use crate::CallResult;
 
 pub type Dict = HashMap<String, Value>;
 pub type List = Vec<Value>;

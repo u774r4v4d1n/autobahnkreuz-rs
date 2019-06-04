@@ -1,0 +1,14 @@
+{
+  "name": "autobahnkreuz-scenario-pubsub",
+  "version": "0.1.0",
+  "description": "Test the pub/sub functionality of autobahnkreuz in a distributed setup.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "Fin Christensen",
+  "license": "BSD-3-Clause",
+  "dependencies": {
+    "autobahn": "^19.4.1"
+  }
+}

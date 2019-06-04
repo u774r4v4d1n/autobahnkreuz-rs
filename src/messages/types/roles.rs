@@ -1,7 +1,8 @@
 use super::is_not;
 use std::collections::HashMap;
+use serde::{Serialize, Deserialize};
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct ClientRoles {
     pub publisher: PublisherRole,
     pub subscriber: SubscriberRole,
@@ -9,7 +10,7 @@ pub struct ClientRoles {
     pub callee: CalleeRole,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct RouterRoles {
     pub dealer: DealerRole,
     pub broker: BrokerRole,
@@ -18,54 +19,54 @@ pub struct RouterRoles {
 /**************************
           Roles
 **************************/
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct PublisherRole {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     features: Option<HashMap<String, bool>>,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct CallerRole {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     features: Option<HashMap<String, bool>>,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct CalleeRole {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     features: Option<HashMap<String, bool>>,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct SubscriberRole {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     features: Option<SubscriberFeatures>,
 }
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct SubscriberFeatures {
     #[serde(skip_serializing_if = "is_not", default)]
     pattern_based_subscription: bool,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct DealerRole {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     features: Option<DealerFeatures>,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct BrokerRole {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     features: Option<BrokerFeatures>,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct DealerFeatures {
     #[serde(skip_serializing_if = "is_not", default)]
     pattern_based_registration: bool,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct BrokerFeatures {
     #[serde(skip_serializing_if = "is_not", default)]
     pattern_based_subscription: bool,

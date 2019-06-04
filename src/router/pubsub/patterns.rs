@@ -2,13 +2,13 @@
 //! to pattern based subscription
 use super::super::{random_id, ConnectionInfo};
 use itertools::Itertools;
-use messages::Reason;
+use crate::messages::Reason;
 use std::collections::HashMap;
 use std::fmt::{self, Debug, Formatter};
 use std::mem;
 use std::slice::Iter;
 use std::sync::{Arc, Mutex};
-use {MatchingPolicy, ID, URI};
+use crate::{MatchingPolicy, ID, URI};
 
 /// Contains a trie corresponding to the subscription patterns that connections have requested.
 ///
@@ -18,6 +18,7 @@ use {MatchingPolicy, ID, URI};
 /// can be found using the `get_registrant_for()` method.
 ///
 
+#[derive(Clone)]
 pub struct SubscriptionPatternNode<P: PatternData> {
     edges: HashMap<String, SubscriptionPatternNode<P>>,
     connections: Vec<DataWrapper<P>>,
@@ -31,6 +32,7 @@ pub trait PatternData {
     fn get_id(&self) -> ID;
 }
 
+#[derive(Clone)]
 struct DataWrapper<P: PatternData> {
     subscriber: P,
     policy: MatchingPolicy,
@@ -95,6 +97,12 @@ impl PatternData for Arc<Mutex<ConnectionInfo>> {
     }
 }
 
+impl PatternData for u64 {
+    fn get_id(&self) -> ID {
+        *self
+    }
+}
+
 impl<'a, P: PatternData> Debug for IterState<'a, P> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(
@@ -119,9 +127,15 @@ impl<P: PatternData> Debug for SubscriptionPatternNode<P> {
     }
 }
 
+impl<P: PatternData> Default for SubscriptionPatternNode<P> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<P: PatternData> SubscriptionPatternNode<P> {
     fn fmt_with_indent(&self, f: &mut Formatter, indent: usize) -> fmt::Result {
-        try!(writeln!(
+        writeln!(
             f,
             "{} pre: {:?} subs: {:?}",
             self.id,
@@ -133,13 +147,13 @@ impl<P: PatternData> SubscriptionPatternNode<P> {
                 .iter()
                 .map(|sub| sub.subscriber.get_id())
                 .join(","),
-        ));
+        )?;
         for (chunk, node) in &self.edges {
             for _ in 0..indent * 2 {
-                try!(write!(f, "  "));
+                write!(f, "  ")?;
             }
-            try!(write!(f, "{} - ", chunk));
-            try!(node.fmt_with_indent(f, indent + 1));
+            write!(f, "{} - ", chunk)?;
+            node.fmt_with_indent(f, indent + 1)?;
         }
         Ok(())
     }
@@ -151,6 +165,7 @@ impl<P: PatternData> SubscriptionPatternNode<P> {
         subscriber: P,
         matching_policy: MatchingPolicy,
     ) -> Result<ID, PatternError> {
+        log::debug!("subscribing with {:?}, {:?}", topic, matching_policy);
         let mut uri_bits = topic.uri.split('.');
         let initial = match uri_bits.next() {
             Some(initial) => initial,

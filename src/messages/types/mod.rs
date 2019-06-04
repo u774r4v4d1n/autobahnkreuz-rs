@@ -6,10 +6,10 @@ mod value;
 use serde;
 use std::fmt;
 
-pub use messages::types::error::*;
-pub use messages::types::options::*;
-pub use messages::types::roles::*;
-pub use messages::types::value::*;
+pub use crate::messages::types::error::*;
+pub use crate::messages::types::options::*;
+pub use crate::messages::types::roles::*;
+pub use crate::messages::types::value::*;
 
 fn is_not(b: &bool) -> bool {
     !*b
@@ -122,6 +122,7 @@ impl<'de> serde::de::Visitor<'de> for MatchingPolicyVisitor {
         match value {
             "prefix" => Ok(MatchingPolicy::Prefix),
             "wildcard" => Ok(MatchingPolicy::Wildcard),
+            "" => Ok(MatchingPolicy::Strict),
             x => Err(serde::de::Error::custom(format!(
                 "Invalid matching policy: {}",
                 x
