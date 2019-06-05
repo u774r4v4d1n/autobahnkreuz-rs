@@ -395,7 +395,7 @@ impl<'a, P: PatternData> Iterator for MatchIterator<'a, P> {
 #[cfg(test)]
 mod test {
     use super::{PatternData, SubscriptionPatternNode};
-    use {MatchingPolicy, ID, URI};
+    use crate::{MatchingPolicy, ID, URI};
 
     #[derive(Clone)]
     struct MockData {

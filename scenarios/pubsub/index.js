@@ -1,7 +1,7 @@
 const { Connection } = require('autobahn');
 
 const snooze = ms => new Promise(resolve => setTimeout(resolve, ms));
-const worker_count = 5;
+const worker_count = 2;
 
 function randomInt(low, high) {
     return Math.floor(Math.random() * (high - low) + low);

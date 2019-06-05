@@ -130,7 +130,8 @@ impl<'de> serde::Deserialize<'de> for Message {
     where
         D: serde::Deserializer<'de>,
     {
-        deserializer.deserialize_any(MessageVisitor)
+        log::debug!("deserializing message");
+        deserializer.deserialize_seq(MessageVisitor)
     }
 }
 
@@ -506,7 +507,9 @@ impl<'de> serde::de::Visitor<'de> for MessageVisitor {
     where
         V: serde::de::SeqAccess<'de>,
     {
-        let message_type: u64 = try_or!(visitor.next_element(), "No message type found");
+        log::debug!("visiting seq");
+        let message_type: u32 = try_or!(visitor.next_element(), "No message type found");
+        log::debug!("visiting {}", message_type);
         match message_type {
             1 => self.visit_hello(visitor),
             2 => self.visit_welcome(visitor),
@@ -545,7 +548,7 @@ mod test {
     use serde::{Deserialize, Serialize};
     use serde_json;
     use std::collections::HashMap;
-    use utils::StructMapWriter;
+    use crate::utils::StructMapWriter;
 
     macro_rules! two_way_test {
         ($message:expr, $s:expr) => {{
