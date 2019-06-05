@@ -1,15 +1,17 @@
 const { Connection } = require('autobahn');
 
 const snooze = ms => new Promise(resolve => setTimeout(resolve, ms));
-const worker_count = 2;
+const worker_count = 3;
+
+AUTOBAHN_DEBUG = true;
 
 function randomInt(low, high) {
     return Math.floor(Math.random() * (high - low) + low);
 }
 
 async function publish(session, ordinal) {
-    while(true) {
-        await snooze(randomInt(1000, 5000));
+    while(ordinal == 0) {
+        await snooze(randomInt(3000, 10000));
         console.log('publishing new topic from', ordinal);
         session.publish('autobahnkreuz.scenarios.pubsub', [ordinal]);
     }
@@ -35,7 +37,7 @@ async function worker(ordinal) {
                     received[args[0]] = 0;
                 }*/
             },
-        );
+        ).then((sub) => console.log(sub.id), console.log);
 
         publish(session, ordinal);
     };

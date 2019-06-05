@@ -29,7 +29,9 @@ impl ConnectionHandler {
                 self.remove();
                 self.send_message(Message::Goodbye(ErrorDetails::new(), Reason::GoodbyeAndOut));
                 self.router.set_state(self.info_id, ConnectionState::Disconnected);
-                match self.sender.close(CloseCode::Normal) {
+                let senders = self.router.senders.lock().unwrap();
+                let sender = senders.get(&self.info_id).unwrap();
+                match sender.close(CloseCode::Normal) {
                     Err(e) => Err(Error::new(ErrorKind::WSError(e))),
                     _ => Ok(()),
                 }
@@ -40,7 +42,9 @@ impl ConnectionHandler {
                     reason
                 );
                 self.router.set_state(self.info_id, ConnectionState::Disconnected);
-                match self.sender.close(CloseCode::Normal) {
+                let senders = self.router.senders.lock().unwrap();
+                let sender = senders.get(&self.info_id).unwrap();
+                match sender.close(CloseCode::Normal) {
                     Err(e) => Err(Error::new(ErrorKind::WSError(e))),
                     _ => Ok(()),
                 }

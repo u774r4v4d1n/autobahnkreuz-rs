@@ -32,7 +32,7 @@ pub struct Router {
     node: Node<RouterInfo>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct RouterCore {
     subscription_manager: SubscriptionManager,
     connections: Arc<Mutex<HashMap<u64, Arc<Mutex<ConnectionInfo>>>>>,
@@ -48,7 +48,6 @@ struct RouterInfo {
 struct ConnectionHandler {
     info_id: u64,
     router: RouterInfo,
-    sender: Sender,
     subscribed_topics: Vec<ID>,
 }
 
@@ -172,12 +171,11 @@ impl Router {
         thread::spawn(move || {
             ws_listen(&url[..], |sender| {
                 let id = random_id();
-                router_info.add_connection(id, sender.clone());
+                router_info.add_connection(id, sender);
                 ConnectionHandler {
                     info_id: id,
                     subscribed_topics: Vec::new(),
                     router: router_info.clone(),
-                    sender,
                 }
             }).unwrap();
         })
@@ -209,18 +207,21 @@ impl RouterCore {
         protocol: String,
         message: Message,
     ) -> WampResult<()> {
+        log::debug!("handling send_message");
         if let Some(sender) = self.senders.lock().unwrap().get(&connection_id) {
+            let sender = sender.clone();
             log::debug!("Sending message {:?} via {}", message, protocol);
             let send_result = if protocol == WAMP_JSON {
-                send_message_json(sender, &message)
+                send_message_json(&sender, &message)
             } else {
-                send_message_msgpack(sender, &message)
+                send_message_msgpack(&sender, &message)
             };
             match send_result {
                 Ok(()) => Ok(()),
                 Err(e) => Err(Error::new(ErrorKind::WSError(e))),
             }
         } else {
+            log::debug!("connection {} is not on this node, dropping message", connection_id);
             Ok(())
         }
     }

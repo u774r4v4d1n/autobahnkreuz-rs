@@ -17,7 +17,7 @@ impl ConnectionHandler {
             request_id, topic.uri
         );
         self.router.add_subscription(self.info_id, request_id, topic.clone(), options.pattern_match);
-        let topic_id = self.router.topic_id(topic);
+        let topic_id = self.router.topic_id(self.info_id, topic);
         self.send_message(Message::Subscribed(request_id, topic_id));
     }
 

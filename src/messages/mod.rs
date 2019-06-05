@@ -131,7 +131,7 @@ impl<'de> serde::Deserialize<'de> for Message {
         D: serde::Deserializer<'de>,
     {
         log::debug!("deserializing message");
-        deserializer.deserialize_seq(MessageVisitor)
+        deserializer.deserialize_any(MessageVisitor)
     }
 }
 
@@ -508,7 +508,7 @@ impl<'de> serde::de::Visitor<'de> for MessageVisitor {
         V: serde::de::SeqAccess<'de>,
     {
         log::debug!("visiting seq");
-        let message_type: u32 = try_or!(visitor.next_element(), "No message type found");
+        let message_type: u64 = try_or!(visitor.next_element(), "No message type found");
         log::debug!("visiting {}", message_type);
         match message_type {
             1 => self.visit_hello(visitor),

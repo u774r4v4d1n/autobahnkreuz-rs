@@ -75,6 +75,7 @@ pub enum RouterProperty {
         connection_id: u64,
     },
     TopicId {
+        connection_id: u64,
         topic: URI,
     },
 }
@@ -160,12 +161,15 @@ impl MachineCore for RouterCore {
                     .ok_or(RequestError::StateRetrieval(Backtrace::new()))
                     .map(|c| RouterPropertyValue::Connection(c.clone()))
             },
-            RouterProperty::TopicId { topic } => {
-                self.subscription_manager.subscription_ids_to_uris.iter()
-                    .filter(|(_, uri)| uri.0 == topic.uri)
-                    .next()
-                    .ok_or(RequestError::StateRetrieval(Backtrace::new()))
-                    .map(|(id, _)| RouterPropertyValue::TopicId(*id))
+            RouterProperty::TopicId { connection_id, topic } => {
+                let subscriptions = &self.subscription_manager.subscriptions;
+                for (subscriber_id, topic_id, _policy) in subscriptions.lock().unwrap().filter(topic) {
+                    if connection_id == *subscriber_id {
+                        return Ok(RouterPropertyValue::TopicId(topic_id));
+                    }
+                }
+
+                Err(RequestError::StateRetrieval(Backtrace::new()))
             },
         }
     }
@@ -180,7 +184,11 @@ impl Machine for RouterInfo {
     }
 
     fn core(&self) -> RouterCore {
-        RouterCore::default()
+        RouterCore {
+            subscription_manager: Default::default(),
+            connections: Default::default(),
+            senders: self.senders.clone(),
+        }
     }
 }
 
@@ -214,6 +222,8 @@ impl RouterInfo {
 
     pub fn add_connection(&self, connection_id: u64, sender: Sender) {
         self.senders.lock().unwrap().insert(connection_id, sender);
+
+        log::trace!("senders map: {:?}", self.senders.lock().unwrap());
 
         if let Some(ref manager) = self.request_manager {
             executor::block_on(apply(manager, RouterChange::AddConnection { connection_id }))
@@ -322,9 +332,9 @@ impl RouterInfo {
         }
     }
 
-    pub fn topic_id(&self, topic: URI) -> u64 {
+    pub fn topic_id(&self, connection_id: u64, topic: URI) -> u64 {
         if let Some(ref manager) = self.request_manager {
-            executor::block_on(retrieve(manager, RouterProperty::TopicId { topic }))
+            executor::block_on(retrieve(manager, RouterProperty::TopicId { connection_id, topic }))
                 .and_then(|res| match res {
                     RouterPropertyValue::TopicId(topic) => Ok(topic),
                     _ => Err(RequestError::StateRetrieval(Backtrace::new())),
@@ -340,20 +350,29 @@ impl RouterInfo {
         let arc = self.connection(connection_id);
         let connection = arc.lock().unwrap();
         log::debug!("bar2");
-        if let Some(sender) = self.senders.lock().unwrap().get(&connection_id) {
-            log::debug!("Sending message {:?} via {}", message, connection.protocol);
-            let send_result = if connection.protocol == WAMP_JSON {
-                send_message_json(sender, &message)
-            } else {
-                send_message_msgpack(sender, &message)
-            };
-            send_result.expect("failed to send message");
-        } else if let Some(ref manager) = self.request_manager {
+        {
+            if let Some(sender) = self.senders.lock().unwrap().get(&connection_id) {
+                log::debug!("Sending message {:?} via {}", message, connection.protocol);
+                let send_result = if connection.protocol == WAMP_JSON {
+                    send_message_json(sender, &message)
+                } else {
+                    send_message_msgpack(sender, &message)
+                };
+                send_result.expect("failed to send message");
+                return;
+            }
+        }
+
+        // prevent dead-locks
+        let protocol = connection.protocol.clone();
+        drop(connection);
+
+        if let Some(ref manager) = self.request_manager {
             log::debug!("bar3");
             executor::block_on(apply(manager, RouterChange::SendMessage {
                 connection_id,
                 message,
-                protocol: connection.protocol.clone(),
+                protocol: protocol,
             })).expect("failed to send message");
             log::debug!("bar4");
         } else {
