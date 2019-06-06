@@ -9,6 +9,6 @@
   "author": "Fin Christensen",
   "license": "BSD-3-Clause",
   "dependencies": {
-    "autobahn": "^19.4.1"
+    "@verkehrsministerium/kraftfahrstrasse": "^0.5.3"
   }
 }

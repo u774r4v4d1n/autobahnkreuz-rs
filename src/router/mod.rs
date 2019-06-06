@@ -165,11 +165,13 @@ impl Router {
         }
     }
 
-    pub fn listen(&self, url: &str) -> JoinHandle<()> {
+    pub fn listen<A>(&self, url: A) -> JoinHandle<()>
+    where
+        A: ToSocketAddrs + std::fmt::Debug + Send + Sync + 'static
+    {
         let router_info = self.node.machine().clone();
-        let url = url.to_string();
         thread::spawn(move || {
-            ws_listen(&url[..], |sender| {
+            ws_listen(url, |sender| {
                 let id = random_id();
                 router_info.add_connection(id, sender);
                 ConnectionHandler {
@@ -209,13 +211,13 @@ impl RouterCore {
     ) -> WampResult<()> {
         log::debug!("handling send_message");
         if let Some(sender) = self.senders.lock().unwrap().get(&connection_id) {
-            let sender = sender.clone();
             log::debug!("Sending message {:?} via {}", message, protocol);
             let send_result = if protocol == WAMP_JSON {
-                send_message_json(&sender, &message)
+                send_message_json(sender, &message)
             } else {
-                send_message_msgpack(&sender, &message)
+                send_message_msgpack(sender, &message)
             };
+            log::debug!("sending succeeded");
             match send_result {
                 Ok(()) => Ok(()),
                 Err(e) => Err(Error::new(ErrorKind::WSError(e))),

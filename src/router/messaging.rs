@@ -151,7 +151,8 @@ impl Handler for ConnectionHandler {
         }
     }
 
-    fn on_close(&mut self, _code: CloseCode, _reason: &str) {
+    fn on_close(&mut self, code: CloseCode, reason: &str) {
+        log::debug!("connection closed with {:?}: {}", code, reason);
         let state = self.router
                 .connection(self.info_id)
                 .lock()
