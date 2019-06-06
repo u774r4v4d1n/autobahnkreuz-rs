@@ -1,7 +1,7 @@
 #! /bin/sh
 
 GATEWAY=localhost:1330
-RUST_LOG=trace,simple_raft_node=info,raft=info
+RUST_LOG=info,autobahnkreuz=debug
 RUST_BACKTRACE=1
 
 if [ -z "$1" ] || [ ! -d "scenarios/$1" ]

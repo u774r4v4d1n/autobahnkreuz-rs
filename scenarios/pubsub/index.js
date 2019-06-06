@@ -14,13 +14,11 @@ function randomInt(low, high) {
 
 async function publish(connection, ordinal) {
     while(ordinal == 0) {
-        await snooze(randomInt(3000, 4000));
-        console.log('publishing new topic from', ordinal);
+        await snooze(randomInt(200, 1000));
+        console.log('publishing new topic from', connection.sessionId);
         connection.Publish('autobahnkreuz.scenarios.pubsub', [ordinal]);
     }
 }
-
-let received = new Array(worker_count).fill(1);
 
 async function worker(ordinal) {
     const connection = new Connection({
@@ -31,7 +29,11 @@ async function worker(ordinal) {
         transport: NodeWebSocketTransport,
         authProvider: new AnonymousAuthProvider(),
 
-        logFunction: console.log,
+        logFunction: (level, timestamp, file, msg) => {
+            if (level === 'INFO' || level === 'WARNING' || level === 'ERROR') {
+                console.log(level, timestamp, file, msg);
+            }
+        },
     });
 
     await connection.Open();
@@ -39,15 +41,9 @@ async function worker(ordinal) {
     connection.Subscribe(
         'autobahnkreuz.scenarios.pubsub',
         (args, _kwargs, _details) => {
-            received[args[0]] += 1;
-
-            console.log('received topic from', args[0]);
-            /*if (received[args[0]] >= worker_count) {
-              console.log('received', worker_count, 'topics from', args[0]);
-              received[args[0]] = 0;
-              }*/
+            console.log('received topic from', args[0], 'on', ordinal);
         },
-    ).then((sub) => console.log(sub.id), console.log);
+    );
 
     publish(connection, ordinal);
 };

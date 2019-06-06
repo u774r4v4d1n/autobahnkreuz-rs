@@ -129,7 +129,7 @@ impl<P: PatternData> Debug for SubscriptionPatternNode<P> {
 
 impl<P: PatternData> Default for SubscriptionPatternNode<P> {
     fn default() -> Self {
-        Self::new()
+        Self::new(random_id(), random_id())
     }
 }
 
@@ -164,6 +164,8 @@ impl<P: PatternData> SubscriptionPatternNode<P> {
         topic: &URI,
         subscriber: P,
         matching_policy: MatchingPolicy,
+        id: ID,
+        prefix_id: ID,
     ) -> Result<ID, PatternError> {
         log::debug!("subscribing with {:?}, {:?}", topic, matching_policy);
         let mut uri_bits = topic.uri.split('.');
@@ -173,8 +175,8 @@ impl<P: PatternData> SubscriptionPatternNode<P> {
         };
         let edge = self.edges
             .entry(initial.to_string())
-            .or_insert_with(SubscriptionPatternNode::new);
-        edge.add_subscription(uri_bits, subscriber, matching_policy)
+            .or_insert_with(|| SubscriptionPatternNode::new(id, prefix_id));
+        edge.add_subscription(uri_bits, subscriber, matching_policy, id, prefix_id)
     }
 
     /// Removes a subscription from the pattern trie.
@@ -190,13 +192,13 @@ impl<P: PatternData> SubscriptionPatternNode<P> {
 
     /// Constructs a new SubscriptionPatternNode to be used as the root of the trie
     #[inline]
-    pub fn new() -> SubscriptionPatternNode<P> {
+    pub fn new(id: ID, prefix_id: ID) -> SubscriptionPatternNode<P> {
         SubscriptionPatternNode {
             edges: HashMap::new(),
             connections: Vec::new(),
             prefix_connections: Vec::new(),
-            id: random_id(),
-            prefix_id: random_id(),
+            id,
+            prefix_id,
         }
     }
 
@@ -205,6 +207,8 @@ impl<P: PatternData> SubscriptionPatternNode<P> {
         mut uri_bits: I,
         subscriber: P,
         matching_policy: MatchingPolicy,
+        id: ID,
+        prefix_id: ID,
     ) -> Result<ID, PatternError>
     where
         I: Iterator<Item = &'a str>,
@@ -216,8 +220,8 @@ impl<P: PatternData> SubscriptionPatternNode<P> {
                 }
                 let edge = self.edges
                     .entry(uri_bit.to_string())
-                    .or_insert_with(SubscriptionPatternNode::new);
-                edge.add_subscription(uri_bits, subscriber, matching_policy)
+                    .or_insert_with(|| SubscriptionPatternNode::new(id, prefix_id));
+                edge.add_subscription(uri_bits, subscriber, matching_policy, id, prefix_id)
             }
             None => {
                 if matching_policy == MatchingPolicy::Prefix {
@@ -395,7 +399,7 @@ impl<'a, P: PatternData> Iterator for MatchIterator<'a, P> {
 #[cfg(test)]
 mod test {
     use super::{PatternData, SubscriptionPatternNode};
-    use crate::{MatchingPolicy, ID, URI};
+    use crate::{MatchingPolicy, ID, URI, router::random_id};
 
     #[derive(Clone)]
     struct MockData {
@@ -419,28 +423,36 @@ mod test {
         let connection2 = MockData::new(2);
         let connection3 = MockData::new(3);
         let connection4 = MockData::new(4);
-        let mut root = SubscriptionPatternNode::new();
+        let mut root = SubscriptionPatternNode::new(random_id(), random_id());
 
         let ids = [
             root.subscribe_with(
                 &URI::new("com.example.test..topic"),
                 connection1,
                 MatchingPolicy::Wildcard,
+                random_id(),
+                random_id(),
             ).unwrap(),
             root.subscribe_with(
                 &URI::new("com.example.test.specific.topic"),
                 connection2,
                 MatchingPolicy::Strict,
+                random_id(),
+                random_id(),
             ).unwrap(),
             root.subscribe_with(
                 &URI::new("com.example"),
                 connection3,
                 MatchingPolicy::Prefix,
+                random_id(),
+                random_id(),
             ).unwrap(),
             root.subscribe_with(
                 &URI::new("com.example.test"),
                 connection4,
                 MatchingPolicy::Prefix,
+                random_id(),
+                random_id(),
             ).unwrap(),
         ];
 
@@ -458,28 +470,36 @@ mod test {
         let connection2 = MockData::new(2);
         let connection3 = MockData::new(3);
         let connection4 = MockData::new(4);
-        let mut root = SubscriptionPatternNode::new();
+        let mut root = SubscriptionPatternNode::new(random_id(), random_id());
 
         let ids = [
             root.subscribe_with(
                 &URI::new("com.example.test..topic"),
                 connection1.clone(),
                 MatchingPolicy::Wildcard,
+                random_id(),
+                random_id(),
             ).unwrap(),
             root.subscribe_with(
                 &URI::new("com.example.test.specific.topic"),
                 connection2,
                 MatchingPolicy::Strict,
+                random_id(),
+                random_id(),
             ).unwrap(),
             root.subscribe_with(
                 &URI::new("com.example"),
                 connection3,
                 MatchingPolicy::Prefix,
+                random_id(),
+                random_id(),
             ).unwrap(),
             root.subscribe_with(
                 &URI::new("com.example.test"),
                 connection4.clone(),
                 MatchingPolicy::Prefix,
+                random_id(),
+                random_id(),
             ).unwrap(),
         ];
 

@@ -14,6 +14,7 @@ use crate::router::{
     ConnectionState,
     MatchingPolicy,
     URI,
+    ID,
     SubscriptionPatternNode,
     Message,
     WAMP_JSON,
@@ -52,6 +53,8 @@ pub enum RouterChange {
         request_id: u64,
         topic: URI,
         matching_policy: MatchingPolicy,
+        id: ID,
+        prefix_id: ID,
     },
     RemoveSubscription {
         connection_id: u64,
@@ -73,10 +76,6 @@ pub enum RouterProperty {
     Connections,
     Connection {
         connection_id: u64,
-    },
-    TopicId {
-        connection_id: u64,
-        topic: URI,
     },
 }
 
@@ -129,13 +128,27 @@ impl MachineCore for RouterCore {
                 log::trace!("removing connection {}", connection_id);
                 self.remove_connection(connection_id);
             },
-            RouterChange::AddSubscription { connection_id, request_id, topic, matching_policy } => {
+            RouterChange::AddSubscription {
+                connection_id,
+                request_id,
+                topic,
+                matching_policy,
+                id,
+                prefix_id,
+            } => {
                 log::trace!(
                     "adding subscription for topic {:?} on connection {}",
                     topic,
                     connection_id,
                 );
-                self.add_subscription(connection_id, request_id, topic, matching_policy).ok();
+                self.add_subscription(
+                    connection_id,
+                    request_id,
+                    topic,
+                    matching_policy,
+                    id,
+                    prefix_id,
+                ).ok();
             },
             RouterChange::RemoveSubscription { connection_id, subscription_id, request_id } => {
                 log::trace!(
@@ -160,16 +173,6 @@ impl MachineCore for RouterCore {
                 self.connections.lock().unwrap().get(&connection_id)
                     .ok_or(RequestError::StateRetrieval(Backtrace::new()))
                     .map(|c| RouterPropertyValue::Connection(c.clone()))
-            },
-            RouterProperty::TopicId { connection_id, topic } => {
-                let subscriptions = &self.subscription_manager.subscriptions;
-                for (subscriber_id, topic_id, _policy) in subscriptions.lock().unwrap().filter(topic) {
-                    if connection_id == *subscriber_id {
-                        return Ok(RouterPropertyValue::TopicId(topic_id));
-                    }
-                }
-
-                Err(RequestError::StateRetrieval(Backtrace::new()))
             },
         }
     }
@@ -270,6 +273,8 @@ impl RouterInfo {
         request_id: u64,
         topic: URI,
         matching_policy: MatchingPolicy,
+        id: ID,
+        prefix_id: ID,
     ) {
         log::debug!(
             "machine is proposing to add subscription ({}, {}, {:?}, {:?})",
@@ -286,6 +291,8 @@ impl RouterInfo {
                     request_id,
                     topic,
                     matching_policy,
+                    id,
+                    prefix_id,
                 },
             )).expect("failed to add subscription");
         } else {
@@ -327,19 +334,6 @@ impl RouterInfo {
                     _ => Err(RequestError::StateRetrieval(Backtrace::new())),
                 })
                 .expect("failed to retrieve connection")
-        } else {
-            panic!("router is not initialized");
-        }
-    }
-
-    pub fn topic_id(&self, connection_id: u64, topic: URI) -> u64 {
-        if let Some(ref manager) = self.request_manager {
-            executor::block_on(retrieve(manager, RouterProperty::TopicId { connection_id, topic }))
-                .and_then(|res| match res {
-                    RouterPropertyValue::TopicId(topic) => Ok(topic),
-                    _ => Err(RequestError::StateRetrieval(Backtrace::new())),
-                })
-                .expect("failed to retrieve topic id")
         } else {
             panic!("router is not initialized");
         }

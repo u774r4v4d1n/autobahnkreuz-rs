@@ -280,6 +280,13 @@ impl RouterCore {
                 Reason::NoSuchSubscription,
             )));
         }
+        let connections = self.connections.lock().unwrap();
+        let connection = connections.get(connection_id).unwrap().lock().unwrap();
+        self.send_message(
+            *connection_id,
+            connection.protocol.clone(),
+            Message::Unsubscribed(*request_id),
+        )?;
 
         Ok(())
     }
@@ -290,7 +297,9 @@ impl RouterCore {
         request_id: u64,
         topic: URI,
         matching_policy: MatchingPolicy,
-    ) -> WampResult<u64> {
+        id: ID,
+        prefix_id: ID,
+    ) -> WampResult<()> {
         log::debug!(
             "machine is adding subscription ({}, {}, {:?}, {:?})",
             connection_id,
@@ -302,6 +311,8 @@ impl RouterCore {
             &topic,
             connection_id,
             matching_policy,
+            id,
+            prefix_id,
         ) {
             Ok(topic_id) => topic_id,
             Err(e) => {
@@ -312,11 +323,20 @@ impl RouterCore {
                 )))
             }
         };
+        log::debug!("subscription for {} on {} got id {}", topic.uri, connection_id, topic_id);
         self.subscription_manager.subscription_ids_to_uris.insert(
             topic_id,
             (topic.uri, matching_policy == MatchingPolicy::Prefix),
         );
-        Ok(topic_id)
+        let connections = self.connections.lock().unwrap();
+        let connection = connections.get(&connection_id).unwrap().lock().unwrap();
+        self.send_message(
+            connection_id,
+            connection.protocol.clone(),
+            Message::Subscribed(request_id, topic_id),
+        )?;
+
+        Ok(())
     }
 }
 
