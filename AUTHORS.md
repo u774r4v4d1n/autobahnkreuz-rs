@@ -8,11 +8,13 @@ Author
 ------
 
 - Dudochkin Victor <dudochkin.vcitor@gitbook.com> (@dudochkin-victor)
+- Fin Christensen <christensen.fin@gmail.com> (@fin-ger)
 
 Contributors
 ------------
 
 - Dudochkin Victor (@dudochkin-victor)
+- Fin Christensen (@fin-ger)
 
 Translators
 ------------

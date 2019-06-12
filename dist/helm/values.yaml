@@ -1,0 +1,9 @@
+# Default values for autobahnkreuz.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 5
+
+service:
+  type: ClusterIP
+  port: 80

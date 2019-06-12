@@ -1,6 +1,9 @@
-language: rust
-rust:
-  - nightly
-matrix:
-  allow_failures:
-    - rust: nightly
+language: minimal
+
+services:
+  - docker
+
+script:
+  - docker build -t fin1ger/autobahnkreuz-rs:latest .
+  - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+- docker push fin1ger/autobahnkreuz-rs:latest

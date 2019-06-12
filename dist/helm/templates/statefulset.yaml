@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "autobahnkreuz.fullname" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "autobahnkreuz.name" . }}
+    helm.sh/chart: {{ include "autobahnkreuz.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  serviceName: {{ include "autobahnkreuz.fullname" . }}
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "autobahnkreuz.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "autobahnkreuz.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: fin1ger/autobahnkreuz-rs:latest
+          imagePullPolicy: Always
+          env:
+            - name: NODE_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: NODE_ADDRESS
+              value: $(NODE_IP):1337
+            - name: NODE_GATEWAY
+              value: {{ include "autobahnkreuz.fullname" . }}-0.{{ include "autobahnkreuz.fullname" . }}:1337
+            - name: WAMP_ADDRESS
+              value: 0.0.0.0:8090
+            - name: RUST_LOG
+              value: info,autobahnkreuz=debug
+            - name: RUST_LOG_STYLE
+              value: always
+          ports:
+            - containerPort: 8090
+            - containerPort: 1337
