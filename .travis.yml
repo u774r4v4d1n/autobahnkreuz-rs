@@ -6,4 +6,4 @@ services:
 script:
   - docker build -t fin1ger/autobahnkreuz-rs:latest .
   - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-- docker push fin1ger/autobahnkreuz-rs:latest
+  - docker push fin1ger/autobahnkreuz-rs:latest
