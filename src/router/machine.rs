@@ -1,6 +1,7 @@
 use simple_raft_node::{
     apply,
     retrieve,
+    broadcast,
     Machine,
     MachineCore,
     MachineCoreError,
@@ -61,8 +62,10 @@ pub enum RouterChange {
         subscription_id: u64,
         request_id: u64,
     },
-    // TODO: don't make this a state-change as it does not actually change the state
-    //       instead, just tell the other nodes to send this message if they own the connection
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Broadcast {
     SendMessage {
         message: Message,
         connection_id: u64,
@@ -104,10 +107,6 @@ impl MachineCore for RouterCore {
         log::debug!("foooooooooooooooo");
         //log::debug!("got a state change {:?}", state_change);
         match state_change {
-            RouterChange::SendMessage { connection_id, protocol, message } => {
-                log::trace!("sending message {:?} to {}", message, connection_id);
-                self.send_message(connection_id, protocol, message).ok();
-            },
             RouterChange::ShutdownSender { connection_id } => {
                 log::trace!("shutting down sender of connection {}", connection_id);
                 self.shutdown_sender(&connection_id);
@@ -174,6 +173,17 @@ impl MachineCore for RouterCore {
                     .ok_or(RequestError::StateRetrieval(Backtrace::new()))
                     .map(|c| RouterPropertyValue::Connection(c.clone()))
             },
+        }
+    }
+
+    fn broadcast(&self, data: Vec<u8>) {
+        if let Ok(broadcast) = rmp_serde::decode::from_slice::<Broadcast>(&data[..]) {
+            match broadcast {
+                Broadcast::SendMessage { connection_id, protocol, message } => {
+                    log::trace!("sending message {:?} to {}", message, connection_id);
+                    self.send_message(connection_id, protocol, message).ok();
+                },
+            }
         }
     }
 }
@@ -340,10 +350,8 @@ impl RouterInfo {
     }
 
     pub fn send_message(&self, connection_id: u64, message: Message) {
-        log::debug!("bar");
         let arc = self.connection(connection_id);
         let connection = arc.lock().unwrap();
-        log::debug!("bar2");
         {
             if let Some(sender) = self.senders.lock().unwrap().get(&connection_id) {
                 log::debug!("Sending message {:?} via {}", message, connection.protocol);
@@ -362,13 +370,14 @@ impl RouterInfo {
         drop(connection);
 
         if let Some(ref manager) = self.request_manager {
-            log::debug!("bar3");
-            executor::block_on(apply(manager, RouterChange::SendMessage {
+            log::trace!("broadcasting message");
+            let bc = rmp_serde::encode::to_vec(&Broadcast::SendMessage {
                 connection_id,
                 message,
                 protocol: protocol,
-            })).expect("failed to send message");
-            log::debug!("bar4");
+            }).expect("failed to encode broadcast");
+            executor::block_on(broadcast(manager, bc)).expect("failed to send message");
+            log::trace!("finished broadcasting message");
         } else {
             panic!("router is not initialized");
         }
