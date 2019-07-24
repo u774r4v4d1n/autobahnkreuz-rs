@@ -376,7 +376,7 @@ impl RouterInfo {
                 message,
                 protocol: protocol,
             }).expect("failed to encode broadcast");
-            executor::block_on(broadcast(manager, bc)).expect("failed to send message");
+            broadcast(manager, bc).expect("failed to send message");
             log::trace!("finished broadcasting message");
         } else {
             panic!("router is not initialized");
