@@ -52,10 +52,7 @@ impl ConnectionHandler {
             kwargs.clone(),
         );
         let my_id = self.info_id;
-        for (subscriber_id, topic_id, policy) in self.router
-            .subscriptions()
-            .lock()
-            .unwrap()
+        for (subscriber_id, topic_id, policy) in self.subscriptions.lock().unwrap()
             .filter(topic.clone())
         {
             if *subscriber_id != my_id {

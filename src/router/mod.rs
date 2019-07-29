@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use std::env;
-use ws::{listen as ws_listen, Result as WSResult, Sender};
+use ws::{Result as WSResult, Sender, Builder, Settings};
 use simple_raft_node::{RequestManager, Node, Config, transports::TcpConnectionManager, storages::MemStorage};
 use regex::Regex;
 use crate::{ID, Error, ErrorType, ErrorKind, MatchingPolicy, WampResult};
@@ -49,6 +49,7 @@ struct ConnectionHandler {
     info_id: u64,
     router: RouterInfo,
     subscribed_topics: Vec<ID>,
+    subscriptions: Arc<Mutex<SubscriptionPatternNode<u64>>>,
 }
 
 #[derive(Debug)]
@@ -171,15 +172,19 @@ impl Router {
     {
         let router_info = self.node.machine().clone();
         thread::spawn(move || {
-            ws_listen(url, |sender| {
+            let ws = Builder::new().with_settings(Settings {
+                ..Settings::default()
+            }).build(|sender| {
                 let id = random_id();
                 router_info.add_connection(id, sender);
                 ConnectionHandler {
                     info_id: id,
                     subscribed_topics: Vec::new(),
                     router: router_info.clone(),
+                    subscriptions: router_info.subscriptions(),
                 }
-            }).unwrap();
+            }).expect("websocket to be built");
+            ws.listen(url).unwrap();
         })
     }
 
