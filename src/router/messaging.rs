@@ -153,14 +153,12 @@ impl Handler for ConnectionHandler {
 
     fn on_close(&mut self, code: CloseCode, reason: &str) {
         log::debug!("connection closed with {:?}: {}", code, reason);
-        let state = self.router
-                .connection(self.info_id)
-                .lock()
-                .unwrap()
-                .state.clone();
-        if state != ConnectionState::Disconnected {
-            log::trace!("Client disconnected.  Closing connection");
-            self.terminate_connection().ok();
+        if let Ok(conn) = self.router.connection(self.info_id) {
+            let state = conn.lock().unwrap().state.clone();
+            if state != ConnectionState::Disconnected {
+                log::trace!("Client disconnected.  Closing connection");
+                self.terminate_connection().ok();
+            }
         }
     }
 }

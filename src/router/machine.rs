@@ -336,57 +336,62 @@ impl RouterInfo {
         }
     }
 
-    pub fn connection(&self, connection_id: u64) -> Arc<Mutex<ConnectionInfo>> {
+    pub fn connection(&self, connection_id: u64) -> Result<Arc<Mutex<ConnectionInfo>>, RequestError> {
         if let Some(ref manager) = self.request_manager {
             executor::block_on(retrieve(manager, RouterProperty::Connection { connection_id }))
                 .and_then(|res| match res {
                     RouterPropertyValue::Connection(connection) => Ok(connection),
                     _ => Err(RequestError::StateRetrieval(Backtrace::new())),
                 })
-                .expect("failed to retrieve connection")
         } else {
             panic!("router is not initialized");
         }
     }
 
     pub fn send_message(&self, connection_id: u64, message: Message) {
-        let arc = self.connection(connection_id);
-        let connection = arc.lock().unwrap();
-        {
-            if let Some(sender) = self.senders.lock().unwrap().get(&connection_id) {
-                log::debug!("Sending message {:?} via {}", message, connection.protocol);
-                let send_result = if connection.protocol == WAMP_JSON {
-                    send_message_json(sender, &message)
-                } else {
-                    send_message_msgpack(sender, &message)
-                };
-                send_result.expect("failed to send message");
-                return;
+        if let Ok(arc) = self.connection(connection_id) {
+            let connection = arc.lock().unwrap();
+            {
+                if let Some(sender) = self.senders.lock().unwrap().get(&connection_id) {
+                    log::info!("Sending message {:?} via {}", message, connection.protocol);
+                    let send_result = if connection.protocol == WAMP_JSON {
+                        log::debug!("json");
+                        send_message_json(sender, &message)
+                    } else {
+                        log::debug!("msgpack");
+                        send_message_msgpack(sender, &message)
+                    };
+                    log::info!("sent");
+                    send_result.expect("failed to send message");
+                    return;
+                }
             }
-        }
 
-        // prevent dead-locks
-        let protocol = connection.protocol.clone();
-        drop(connection);
+            // prevent dead-locks
+            let protocol = connection.protocol.clone();
+            drop(connection);
 
-        if let Some(ref manager) = self.request_manager {
-            log::trace!("broadcasting message");
-            let bc = rmp_serde::encode::to_vec(&Broadcast::SendMessage {
-                connection_id,
-                message,
-                protocol: protocol,
-            }).expect("failed to encode broadcast");
-            broadcast(manager, bc).expect("failed to send message");
-            log::trace!("finished broadcasting message");
-        } else {
-            panic!("router is not initialized");
+            if let Some(ref manager) = self.request_manager {
+                log::trace!("broadcasting message");
+                let bc = rmp_serde::encode::to_vec(&Broadcast::SendMessage {
+                    connection_id,
+                    message,
+                    protocol: protocol,
+                }).expect("failed to encode broadcast");
+                broadcast(manager, bc).expect("failed to send message");
+                log::trace!("finished broadcasting message");
+            } else {
+                panic!("router is not initialized");
+            }
         }
     }
 }
 
 pub fn send_message_json(sender: &Sender, message: &Message) -> WSResult<()> {
     // Send the message
-    sender.send(WSMessage::Text(serde_json::to_string(message).unwrap()))
+    let text = serde_json::to_string(message).unwrap();
+    log::info!("sending {}", text);
+    sender.send(WSMessage::Text(text))
 }
 
 pub fn send_message_msgpack(sender: &Sender, message: &Message) -> WSResult<()> {

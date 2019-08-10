@@ -16,7 +16,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use std::env;
 use ws::{Result as WSResult, Sender, Builder, Settings};
-use simple_raft_node::{RequestManager, Node, Config, transports::TcpConnectionManager, storages::MemStorage};
+use simple_raft_node::{RequestManager, RequestError, Node, Config, transports::TcpConnectionManager, storages::MemStorage};
 use regex::Regex;
 use crate::{ID, Error, ErrorType, ErrorKind, MatchingPolicy, WampResult};
 use serde::{Serialize, Deserialize};
@@ -48,7 +48,7 @@ struct RouterInfo {
 struct ConnectionHandler {
     info_id: u64,
     router: RouterInfo,
-    subscribed_topics: Vec<ID>,
+    subscribed_topics: Vec<(ID, ID)>,
     subscriptions: Arc<Mutex<SubscriptionPatternNode<u64>>>,
 }
 
@@ -351,11 +351,12 @@ impl ConnectionHandler {
             "Removing subscriptions for client {}",
             self.info_id,
         );
-        for subscription_id in &self.subscribed_topics {
-            log::trace!("Looking for subscription {}", subscription_id);
-            self.router.remove_subscription(self.info_id, 0, *subscription_id);
-            self.router.remove_connection(self.info_id);
+        for (topic_id, request_id) in &self.subscribed_topics {
+            log::trace!("Looking for subscription {}", topic_id);
+
+            self.router.remove_subscription(self.info_id, *topic_id, *request_id);
         }
+        self.router.remove_connection(self.info_id);
     }
 
     fn terminate_connection(&self) -> WSResult<()> {
@@ -363,7 +364,7 @@ impl ConnectionHandler {
         Ok(())
     }
 
-    fn info(&self) -> Arc<Mutex<ConnectionInfo>> {
-        self.router.connection(self.info_id).clone()
+    fn info(&self) -> Result<Arc<Mutex<ConnectionInfo>>, RequestError> {
+        self.router.connection(self.info_id)
     }
 }

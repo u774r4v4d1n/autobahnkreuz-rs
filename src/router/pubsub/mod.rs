@@ -16,19 +16,21 @@ impl ConnectionHandler {
             "Responding to subscribe message (conn: {}, id: {}, topic: {})",
             self.info_id, request_id, topic.uri
         );
+        let topic_id = random_id();
+        self.subscribed_topics.push((topic_id, request_id));
         self.router.add_subscription(
             self.info_id,
             request_id,
             topic.clone(),
             options.pattern_match,
-            random_id(),
+            topic_id,
             random_id(),
         );
     }
 
     pub fn handle_unsubscribe(&mut self, request_id: u64, subscription_id: u64) {
         self.router.remove_subscription(self.info_id, subscription_id, request_id);
-        self.subscribed_topics.retain(|id| *id != subscription_id);
+        self.subscribed_topics.retain(|(tid, _rid)| *tid != subscription_id);
     }
 
     pub fn handle_publish(

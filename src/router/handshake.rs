@@ -16,43 +16,47 @@ impl ConnectionHandler {
     }
 
     pub fn handle_goodbye(&self, _details: ErrorDetails, reason: Reason) -> WampResult<()> {
-        let state = self.info().lock().unwrap().state.clone();
-        match state {
-            ConnectionState::Initializing => {
-                // TODO check specification for how this ought to work.
-                Err(Error::new(ErrorKind::InvalidState(
-                    "Received a goodbye message before handshake complete",
-                )))
-            }
-            ConnectionState::Connected => {
-                log::info!("Received goodbye message with reason: {:?}", reason);
-                self.remove();
-                self.send_message(Message::Goodbye(ErrorDetails::new(), Reason::GoodbyeAndOut));
-                self.router.set_state(self.info_id, ConnectionState::Disconnected);
-                let senders = self.router.senders.lock().unwrap();
-                let sender = senders.get(&self.info_id).unwrap();
-                match sender.close(CloseCode::Normal) {
-                    Err(e) => Err(Error::new(ErrorKind::WSError(e))),
-                    _ => Ok(()),
+        if let Ok(info) = self.info() {
+            let state = info.lock().unwrap().state.clone();
+            match state {
+                ConnectionState::Initializing => {
+                    // TODO check specification for how this ought to work.
+                    Err(Error::new(ErrorKind::InvalidState(
+                        "Received a goodbye message before handshake complete",
+                    )))
+                }
+                ConnectionState::Connected => {
+                    log::info!("Received goodbye message with reason: {:?}", reason);
+                    self.remove();
+                    self.send_message(Message::Goodbye(ErrorDetails::new(), Reason::GoodbyeAndOut));
+                    self.router.set_state(self.info_id, ConnectionState::Disconnected);
+                    let senders = self.router.senders.lock().unwrap();
+                    let sender = senders.get(&self.info_id).unwrap();
+                    match sender.close(CloseCode::Normal) {
+                        Err(e) => Err(Error::new(ErrorKind::WSError(e))),
+                        _ => Ok(()),
+                    }
+                }
+                ConnectionState::ShuttingDown => {
+                    log::info!(
+                        "Received goodbye message in response to our goodbye message with reason: {:?}",
+                        reason
+                    );
+                    self.router.set_state(self.info_id, ConnectionState::Disconnected);
+                    let senders = self.router.senders.lock().unwrap();
+                    let sender = senders.get(&self.info_id).unwrap();
+                    match sender.close(CloseCode::Normal) {
+                        Err(e) => Err(Error::new(ErrorKind::WSError(e))),
+                        _ => Ok(()),
+                    }
+                }
+                ConnectionState::Disconnected => {
+                    log::warn!("Received goodbye message after closing connection");
+                    Ok(())
                 }
             }
-            ConnectionState::ShuttingDown => {
-                log::info!(
-                    "Received goodbye message in response to our goodbye message with reason: {:?}",
-                    reason
-                );
-                self.router.set_state(self.info_id, ConnectionState::Disconnected);
-                let senders = self.router.senders.lock().unwrap();
-                let sender = senders.get(&self.info_id).unwrap();
-                match sender.close(CloseCode::Normal) {
-                    Err(e) => Err(Error::new(ErrorKind::WSError(e))),
-                    _ => Ok(()),
-                }
-            }
-            ConnectionState::Disconnected => {
-                log::warn!("Received goodbye message after closing connection");
-                Ok(())
-            }
+        } else {
+            Ok(())
         }
     }
 
