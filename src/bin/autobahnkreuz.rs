@@ -5,7 +5,8 @@ extern crate env_logger;
 
 use std::net::ToSocketAddrs;
 
-fn main() {
+#[runtime::main]
+async fn main() {
     env_logger::init();
 
     let wamp_address = std::env::var("WAMP_ADDRESS").ok()
@@ -26,6 +27,5 @@ fn main() {
         }).expect("Please specify a WAMP_ADDRESS (domain:port) via an environment variable!");
 
     let router = Router::new();
-    let child = router.listen(wamp_address);
-    child.join().unwrap();
+    router.listen(wamp_address);
 }

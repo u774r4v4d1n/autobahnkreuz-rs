@@ -4,7 +4,7 @@ mod pubsub;
 mod machine;
 
 use crate::messages::{ErrorDetails, Message, Reason, URI};
-use rand::distributions::{Distribution, Range};
+use rand::distributions::{Distribution, Uniform};
 use rand::thread_rng;
 use crate::router::pubsub::SubscriptionPatternNode;
 use crate::router::machine::send_message_json;
@@ -12,7 +12,7 @@ use crate::router::machine::send_message_msgpack;
 use std::collections::HashMap;
 use std::marker::Sync;
 use std::sync::{Arc, Mutex};
-use std::thread::{self, JoinHandle};
+use std::thread;
 use std::time::Duration;
 use std::env;
 use ws::{Result as WSResult, Sender, Builder, Settings};
@@ -75,7 +75,7 @@ static WAMP_MSGPACK: &'static str = "wamp.2.msgpack";
 fn random_id() -> u64 {
     let mut rng = thread_rng();
     // TODO make this a constant
-    let between = Range::new(0, 1u64.rotate_left(56) - 1);
+    let between = Uniform::new(0, 1u64.rotate_left(56) - 1);
     between.sample(&mut rng)
 }
 
@@ -135,7 +135,6 @@ impl Router {
 
         let config = Config {
             id: node_id,
-            tag: format!("node_{}", node_id),
             election_tick: 10,
             heartbeat_tick: 3,
             ..Default::default()
@@ -166,26 +165,24 @@ impl Router {
         }
     }
 
-    pub fn listen<A>(&self, url: A) -> JoinHandle<()>
+    pub fn listen<A>(&self, url: A)
     where
         A: ToSocketAddrs + std::fmt::Debug + Send + Sync + 'static
     {
         let router_info = self.node.machine().clone();
-        thread::spawn(move || {
-            let ws = Builder::new().with_settings(Settings {
-                ..Settings::default()
-            }).build(|sender| {
-                let id = random_id();
-                router_info.add_connection(id, sender);
-                ConnectionHandler {
-                    info_id: id,
-                    subscribed_topics: Vec::new(),
-                    router: router_info.clone(),
-                    subscriptions: router_info.subscriptions(),
-                }
-            }).expect("websocket to be built");
-            ws.listen(url).unwrap();
-        })
+        let ws = Builder::new().with_settings(Settings {
+            ..Settings::default()
+        }).build(|sender| {
+            let id = random_id();
+            router_info.add_connection(id, sender);
+            ConnectionHandler {
+                info_id: id,
+                subscribed_topics: Vec::new(),
+                router: router_info.clone(),
+                subscriptions: router_info.subscriptions(),
+            }
+        }).expect("websocket to be built");
+        ws.listen(url).unwrap();
     }
 
     pub fn shutdown(&self) {
